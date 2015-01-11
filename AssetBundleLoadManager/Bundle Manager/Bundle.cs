@@ -132,10 +132,10 @@ namespace BundleManager
 
         protected virtual void Awake()
         {
-            foreach (var v in GetComponentsInChildren<Renderer>())
-            {
-                v.sharedMaterial.shader = Shader.Find(v.sharedMaterial.shader.name);
-            }
+//             foreach (var v in GetComponentsInChildren<Renderer>())
+//             {
+//                 v.sharedMaterial.shader = Shader.Find(v.sharedMaterial.shader.name);
+//             }
             if (hasDependBundle)
             {
                 for (int i = 0; i < dependBundles.Length; ++i)

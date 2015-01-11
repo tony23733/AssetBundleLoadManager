@@ -182,11 +182,15 @@ namespace BundleManager
         /// </summary>
         private Hashtable mAssetCached = new Hashtable();
         /// <summary>
+        /// 回收资源缓存
+        /// </summary>
+        private Dictionary<string, Queue<Bundle>> mRecycleBundleCached = new Dictionary<string, Queue<Bundle>>();
+        /// <summary>
         /// 资源请求列表
         /// </summary>
         private List<LoadRequestBase> mAssetLoadRequestList = new List<LoadRequestBase>();
         /// <summary>
-        /// 资源加载请求等待列表
+        /// 资源加载请求等待列表，当请求列表里有相同资源请求时加入备用请求。
         /// </summary>
         private List<AssetLoadRequestWait> mAssetLoadRequestWaitList = new List<AssetLoadRequestWait>();
         /// <summary>
@@ -197,10 +201,10 @@ namespace BundleManager
         /// 原始资源计数器
         /// </summary>
         private Dictionary<string, int> mOriginalAssetCounter = new Dictionary<string, int>();
-        /// <summary>
-        /// 卸载所有资源
-        /// </summary>
-        private bool mIsUnloadUnusedAssets;
+//         /// <summary>
+//         /// 卸载所有资源
+//         /// </summary>
+//         private bool mIsUnloadUnusedAssets;
 
         // Use this for initialization
         void Awake()
@@ -231,24 +235,42 @@ namespace BundleManager
             }
             for (int i = 0; i < mAssetLoadRequestWaitList.Count; ++i)
             {
-                if (instance.mAssetCached.ContainsKey(mAssetLoadRequestWaitList[i].assetName))
+                string assetName = mAssetLoadRequestWaitList[i].assetName;
+                // 先判断回收站
+                if (instance.mRecycleBundleCached.ContainsKey(assetName))
                 {
-                    Bundle b = (Bundle)instance.mAssetCached[mAssetLoadRequestWaitList[i].assetName];
+                    var list = instance.mRecycleBundleCached[assetName];
+                    if (list.Count > 0)
+                    {
+                        Bundle bundleInstantiate = list.Dequeue();
+                        bundleInstantiate.gameObject.SetActive(true);
+                        if (mAssetLoadRequestWaitList[i].onComplete != null)
+                            mAssetLoadRequestWaitList[i].onComplete(assetName, bundleInstantiate);
+                        mAssetLoadRequestWaitList.RemoveAt(i);
+                        --i;
+                        break;
+                    }
+                }
+
+                // 判断预设
+                if (instance.mAssetCached.ContainsKey(assetName))
+                {
+                    Bundle b = (Bundle)instance.mAssetCached[assetName];
                     if (CheckBundleCachedExistRecursively(b))
                     {
                         if (mAssetLoadRequestWaitList[i].onComplete != null)
-                            mAssetLoadRequestWaitList[i].onComplete(mAssetLoadRequestWaitList[i].assetName, InstantiateBundle(b));
+                            mAssetLoadRequestWaitList[i].onComplete(assetName, InstantiateBundle(b));
                         mAssetLoadRequestWaitList.RemoveAt(i);
                         --i;
                     }
                 }
             }
 
-            if (mIsUnloadUnusedAssets)
-            {
-                Resources.UnloadUnusedAssets();
-                mIsUnloadUnusedAssets = false;
-            }
+//             if (mIsUnloadUnusedAssets)
+//             {
+//                 Resources.UnloadUnusedAssets();
+//                 mIsUnloadUnusedAssets = false;
+//             }
         }
 
         /// <summary>
@@ -266,7 +288,7 @@ namespace BundleManager
         /// </summary>
         /// <param name="assetName"></param>
         /// <param name="assetInstance"></param>
-        public static void UnusedGameObjectAsset(string assetName, Bundle assetInstance)
+        internal static void UnusedGameObjectAsset(string assetName, Bundle assetInstance)
         {
 //             bool haveIns = false;
 //             // 删除实例
@@ -287,10 +309,51 @@ namespace BundleManager
                     {
                         DestroyImmediate(((Bundle)(instance.mAssetCached[assetName])).gameObject, true);
                         instance.mAssetCached.Remove(assetName);
-                        instance.mIsUnloadUnusedAssets = true;
+//                         instance.mIsUnloadUnusedAssets = true;
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// 回收GameObject资源
+        /// </summary>
+        /// <param name="assetName"></param>
+        /// <param name="assetInstance"></param>
+        public static void RecycleGameObjectAsset(Bundle assetInstance)
+        {
+            if (!instance.mRecycleBundleCached.ContainsKey(assetInstance.assetName))
+                instance.mRecycleBundleCached.Add(assetInstance.assetName, new Queue<Bundle>());
+            var list = instance.mRecycleBundleCached[assetInstance.assetName];
+            if (list.Contains(assetInstance))
+            {
+                Debug.LogWarning("--Toto-- AssetBundleLoadManager->RecycleGameObjectAsset: mRecycleBundleCached contains the " + assetInstance.name);
+                return;
+            }
+            assetInstance.transform.parent = null;
+            if (instance.mAssetCached.ContainsKey(assetInstance.assetName))
+            {
+                Bundle b = (Bundle)instance.mAssetCached[assetInstance.assetName];
+                if (b != null)
+                {
+                    assetInstance.transform.localScale = b.transform.localScale;
+                }
+            }
+            assetInstance.gameObject.SetActive(false);
+            list.Enqueue(assetInstance);
+        }
+
+        /// <summary>
+        /// 清除回收资源
+        /// </summary>
+        public static void ClearRecycle()
+        {
+            foreach (KeyValuePair<string, Queue<Bundle>> pair in instance.mRecycleBundleCached)
+            {
+                foreach (var v in pair.Value)
+                    Destroy(v.gameObject);
+            }
+            instance.mRecycleBundleCached.Clear();
         }
 
         /// <summary>
@@ -325,6 +388,20 @@ namespace BundleManager
                 Debug.LogWarning("--Toto-- AssetBundleLoadManager->UseGameObjectAsset: '" + assetName + "' asset does not exist.");
                 return;
             }
+            // 判断回收站
+            if (instance.mRecycleBundleCached.ContainsKey(assetName))
+            {
+                var list = instance.mRecycleBundleCached[assetName];
+                if (list.Count > 0)
+                {
+                    Bundle bundleInstantiate = list.Dequeue();
+                    bundleInstantiate.gameObject.SetActive(true);
+                    if (onComplete != null)
+                        onComplete(assetName, bundleInstantiate);
+                    return;
+                }
+            }
+            // 判断缓存
             if (instance.mAssetCached.ContainsKey(assetName))
             {
                 Bundle b = (Bundle)instance.mAssetCached[assetName];
@@ -428,7 +505,6 @@ namespace BundleManager
                         var asset = (Object)instance.mAssetCached[assetName];
                         Resources.UnloadAsset(asset);
                         instance.mAssetCached.Remove(assetName);
-                        instance.mIsUnloadUnusedAssets = true;
                     }
                 }
             }

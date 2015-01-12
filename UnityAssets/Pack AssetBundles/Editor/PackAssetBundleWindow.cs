@@ -10,7 +10,7 @@ namespace BundleManager
     {
         // Export Information
         private string mAssetBundlesFolder = "/Pack AssetBundles/";
-        private string[] mContains = new string[] { "UI", "Level", "Card", "Character", "Portrait", "FX", "Skill Shot", "Icon" };
+        private string[] mContains;
         private string mExportFolder = "/StreamingAssets/";
         private string mConfigurationExportPath = "/Pack AssetBundles/AssetBundleData.asset";
         private string mBundleFileExtension = ".bundle";
@@ -45,6 +45,10 @@ namespace BundleManager
                 abData = (AssetBundleData)AssetDatabase.LoadMainAssetAtPath(mAssetPathHead + mConfigurationExportPath);
             if (abData != null)
                 mLocalBundleTargetName = abData.bundlePlatform;
+            if (HasContains())
+                LoadContains();
+            else
+                ResetContains();
         }
 
         void OnGUI()
@@ -60,10 +64,21 @@ namespace BundleManager
                 mContains.CopyTo(oldContains, 0);
                 mContains = new string[size];
                 System.Array.Copy(oldContains, mContains, Mathf.Min(oldContains.Length, mContains.Length));
+                SaveContains();
             }
             for (int i = 0; i < mContains.Length; ++i)
             {
-                mContains[i] = EditorGUILayout.TextField("  Folder " + i, mContains[i]);
+                string newContain = EditorGUILayout.TextField("  Folder " + i, mContains[i]);
+                if (newContain != mContains[i])
+                {
+                    mContains[i] = newContain;
+                    SaveContains();
+                }
+            }
+            if (GUILayout.Button("ResetContains"))
+            {
+                ResetContains();
+                SaveContains();
             }
             mExportFolder = EditorGUILayout.TextField("Export Folder", mExportFolder);
             mConfigurationExportPath = EditorGUILayout.TextField("Configuration Export Path", mConfigurationExportPath);
@@ -236,6 +251,43 @@ namespace BundleManager
             BuildPipeline.BuildAssetBundle(asset, null, exportPath, BuildAssetBundleOptions.CollectDependencies | BuildAssetBundleOptions.CompleteAssets, mBuildTarget);
             mAssetPath.Add(fileName, "/" + containFolder + "/" + fileName + mBundleFileExtension/*exportPath.Substring(Application.dataPath.Length)*/);
             Debug.Log("asset " + fileName + " : bundle path " + mAssetPath[fileName]);
+        }
+
+        void LoadContains()
+        {
+            if (!HasContains())
+                return;
+            string conts = PlayerPrefs.GetString("Contains");
+            string[] contsSplit = conts.Split(new string[] { "&&" }, System.StringSplitOptions.RemoveEmptyEntries);
+            if (contsSplit.Length == 0)
+                return;
+            mContains = new string[contsSplit.Length];
+            for (int i = 0; i < contsSplit.Length; ++i)
+            {
+                mContains[i] = contsSplit[i];
+            }
+        }
+
+        void SaveContains()
+        {
+            System.Text.StringBuilder sb = new System.Text.StringBuilder();
+            for (int i = 0; i < mContains.Length; ++i)
+            {
+                sb.Append(mContains[i]);
+                if (i != mContains.Length - 1)
+                    sb.Append("&&");
+            }
+            PlayerPrefs.SetString("Contains", sb.ToString());
+        }
+
+        bool HasContains()
+        {
+            return PlayerPrefs.HasKey("Contains");
+        }
+
+        void ResetContains()
+        {
+            mContains = new string[] { "Level", "Card", "Character", "FX", "Icon" };
         }
     }
 }

@@ -178,6 +178,14 @@ namespace BundleManager
         /// </summary>
         public AssetBundleData data;
         /// <summary>
+        /// 自动卸载未使用的资源
+        /// </summary>
+        public bool autoUnloadUnusedAssets = true;
+        /// <summary>
+        /// 加载场景时清楚回收站缓存，仅清楚缓存，销毁有系统执行。
+        /// </summary>
+        public bool clearRecycleCachedOnLevelWasLoaded = true;
+        /// <summary>
         /// asset缓存
         /// </summary>
         private Hashtable mAssetCached = new Hashtable();
@@ -201,10 +209,10 @@ namespace BundleManager
         /// 原始资源计数器
         /// </summary>
         private Dictionary<string, int> mOriginalAssetCounter = new Dictionary<string, int>();
-//         /// <summary>
-//         /// 卸载所有资源
-//         /// </summary>
-//         private bool mIsUnloadUnusedAssets;
+        /// <summary>
+        /// 卸载所有资源
+        /// </summary>
+        private bool mIsUnloadUnusedAssets;
 
         // Use this for initialization
         void Awake()
@@ -266,11 +274,18 @@ namespace BundleManager
                 }
             }
 
-//             if (mIsUnloadUnusedAssets)
-//             {
-//                 Resources.UnloadUnusedAssets();
-//                 mIsUnloadUnusedAssets = false;
-//             }
+            if (mIsUnloadUnusedAssets && autoUnloadUnusedAssets)
+            {
+                Resources.UnloadUnusedAssets();
+                mIsUnloadUnusedAssets = false;
+            }
+        }
+
+        void OnLevelWasLoaded(int level)
+        {
+            if (!clearRecycleCachedOnLevelWasLoaded)
+                return;
+            instance.mRecycleBundleCached.Clear();
         }
 
         /// <summary>
@@ -290,16 +305,8 @@ namespace BundleManager
         /// <param name="assetInstance"></param>
         internal static void UnusedGameObjectAsset(string assetName, Bundle assetInstance)
         {
-//             bool haveIns = false;
-//             // 删除实例
-//             if (assetInstance != null)
-//             {
-//                 haveIns = true;
-//                 DestroyImmediate(assetInstance.gameObject);
-//             }
-
             // 更新计数、删除资源
-            if (/*haveIns && */instance.mAssetInstanceCounter.ContainsKey(assetName))
+            if (instance.mAssetInstanceCounter.ContainsKey(assetName))
             {
                 --instance.mAssetInstanceCounter[assetName];
                 if (instance.mAssetInstanceCounter[assetName] <= 0)
@@ -309,7 +316,7 @@ namespace BundleManager
                     {
                         DestroyImmediate(((Bundle)(instance.mAssetCached[assetName])).gameObject, true);
                         instance.mAssetCached.Remove(assetName);
-//                         instance.mIsUnloadUnusedAssets = true;
+                        instance.mIsUnloadUnusedAssets = true;
                     }
                 }
             }
